@@ -1,0 +1,150 @@
+---
+  output: pdf_document
+---
+
+```{r setup, cache=FALSE, echo=FALSE, global.par=TRUE}
+library("RColorBrewer")    # brewer.pal
+library("knitr")           # opts_chunk
+
+# terminal output
+options(width = 100)
+
+# color palette
+palette(brewer.pal(6, "Set1"))
+
+# code chunk options
+opts_chunk$set(cache=TRUE, fig.align="center", comment=NA, echo=TRUE,
+               highlight=TRUE, tidy=FALSE, warning=FALSE, message=FALSE)
+```
+
+Topic Models for Anushka
+========================
+
+
+Preliminaries
+-------------
+
+### Computing environment
+
+
+We will use the following R packages.
+
+```{r}
+library("fpc")
+library("stringi")
+library("mallet")
+library("coreNLP")
+library("quantedaData")
+```
+
+To ensure consistent runs, we set the seed before performing any
+analysis.
+
+```{r}
+set.seed(0)
+```
+
+### Data
+
+Load 57 US inaugural addresses (US presidentes) data. Keep 20th century speeches only.
+
+```{r}
+data("inaugTexts")
+# keep 20th century presidents only
+inaugTexts <- inaugTexts[29:length(inaugTexts)]
+names(inaugTexts)
+names <- stri_sub(names(inaugTexts),6)
+year <- substr(names(inaugTexts),1,4)
+```
+
+Data preprocessing
+------------------
+
+### Clean Text
+
+For each document in the corpus, remove all punctuation and numbers, and case-fold the text.
+
+```{r}
+# convert to canonical case (lowercase for most languages);
+# normalize the unicode representation
+text <- stringi::stri_trans_nfkc_casefold(inaugTexts)
+# remove punctuation and digits
+text <- gsub("[[:punct:][:digit:]]", "", text)
+```
+
+### Feature selection
+
+Rather than fitting the topic model to the entire text, we fit the model to
+just the lemmas of the non-proper nouns. The following code segment filters
+the text using the POS-tagged and lemmatized corpus.  For each document, we
+build a long text string containing all of the selected words, separated by
+spaces.
+
+**Anushka:** You will have to download and install either `coreNLP` or `openNLP` to do this. CoreNLP is more involved but has slightly better results. Unfortunately, neither of them is fun to install or work with... 
+
+```{r}
+coreNLP::initCoreNLP(annotators=c("tokenize", "ssplit", "pos", "lemma"))
+
+bagOfWords <- rep("", length(text))
+for (j in seq_along(text)) {
+    anno <- coreNLP::annotateString(text[j])
+    token <- getToken(anno)
+    theseLemma <- token$lemma[token$POS %in% c("NNS", "NN")]
+    bagOfWords[j] <- paste(theseLemma, collapse=" ")
+}
+```
+
+To filter out stopwords, we need to store the words in a file. Since we
+already have used POS tags to filter out stop words, we only need to worry
+about initials that may have been mistaken for non-proper nouns by the tagger.
+
+```{r}
+tf <- tempfile()
+writeLines(c(letters, LETTERS), tf)
+```
+
+
+Fitting
+-------
+
+Fit two topic models with 8 topics each.
+
+```{r}
+run <- list()
+for (i in 1:2) {
+instance <- mallet.import(id.array=names(inaugTexts), text.array=bagOfWords,
+                          stoplist.file=tf)
+tm <- MalletLDA(num.topics=8)
+tm$loadDocuments(instance)
+tm$setAlphaOptimization(20, 50)
+tm$train(200)
+tm$maximize(10)
+
+# pull out
+topics <- mallet.doc.topics(tm, smoothed=TRUE, normalized=TRUE)
+words <- mallet.topic.words(tm, smoothed=TRUE, normalized=TRUE)
+vocab <- tm$getVocabulary()
+
+# save model results in list
+run[[i]] <- list(topics=topics, words=words, vocab=vocab)
+}
+```
+
+Results
+-------
+
+Here are the top 10 words in each of the 8 topics:
+
+```{r}
+run1 <- run[[1]]; run2 <- run[[2]]
+# get top 10 words
+(res1 <- apply(run1$words, 1, 
+               function(v) run1$vocab[order(v, decreasing=TRUE)[1:10]]))
+(res2 <- apply(run2$words, 1, 
+               function(v) run2$vocab[order(v, decreasing=TRUE)[1:10]]))
+```
+
+This is what we were talking about in the park: Comparing these two outputs is a little hard.
+
+**Good luck.**
+

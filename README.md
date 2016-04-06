@@ -1,0 +1,1 @@
+Here is a pdf containing a simple example of a topic model. I also uploaded the Rmd.
